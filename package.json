@@ -1,0 +1,58 @@
+{
+  "name": "html_gpu_render",
+  "version": "0.1.0",
+  "description": "Render an HTML page or canvas animation frame by frame to raw, PNG or EXR video frames without screenshots: Chromium HTML-in-Canvas or a canvas copy, WebGPU readback, hidden Electron window. Motion blur from sub-frames on the GPU, HDR float output.",
+  "license": "MIT",
+  "type": "module",
+  "main": "src/index.mjs",
+  "exports": "./src/index.mjs",
+  "bin": {
+    "html-gpu-render": "bin/html-gpu-render.mjs"
+  },
+  "files": [
+    "bin",
+    "src",
+    "tools",
+    "test",
+    "demo",
+    "README.md",
+    "AGENTS.md",
+    "llms.txt",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node test/run.mjs",
+    "demo": "node bin/html-gpu-render.mjs demo/page.html --out out/demo --width 1720 --height 720 --dpr 2 --frames 60 --fps 60 --format png",
+    "demo:blur": "node bin/html-gpu-render.mjs demo/motion.html --out out/blur --width 1720 --height 720 --dpr 2 --frames 60 --fps 30 --subframes 16 --format png",
+    "probe": "node tools/probe.mjs",
+    "bench": "node tools/bench.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "peerDependencies": {
+    "electron": ">=43"
+  },
+  "peerDependenciesMeta": {
+    "electron": {
+      "optional": true
+    }
+  },
+  "keywords": [
+    "html-to-video",
+    "html-to-frames",
+    "html-in-canvas",
+    "webgpu",
+    "electron",
+    "frame-capture",
+    "headless-rendering",
+    "motion-blur",
+    "hdr",
+    "readback",
+    "puppeteer-alternative",
+    "frame-by-frame",
+    "deterministic",
+    "openexr",
+    "motion-graphics"
+  ]
+}

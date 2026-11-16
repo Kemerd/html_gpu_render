@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>html_gpu_render WebGPU canvas demo</title>
+<!--
+  A page whose whole picture is one WebGPU canvas, for  --mode canvas.  The context is configured the way the
+  direct road (--canvas-road direct) needs it: format rgba8unorm, usage with COPY_SRC, alphaMode premultiplied.
+  Configured otherwise (the usual bgra8unorm without COPY_SRC), the tool takes the copy road instead.
+  window.__seek(t) draws time t; window.__ready is true once the device is there (use: --ready "window.__ready").
+-->
+<style>
+  html, body { margin: 0; width: 100%; height: 100%; background: transparent; overflow: hidden; }
+  canvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; display: block; }
+</style>
+</head>
+<body>
+<canvas id="stage"></canvas>
+<script>
+  window.__ready = false;
+  window.__seek = () => {};
+  (async () => {
+    const canvas = document.getElementById('stage');
+    // the drawing buffer in device pixels
+    canvas.width = Math.round(innerWidth * devicePixelRatio);
+    canvas.height = Math.round(innerHeight * devicePixelRatio);
+    const adapter = await navigator.gpu.requestAdapter();
+    const device = await adapter.requestDevice();
+    const context = canvas.getContext('webgpu');
+    context.configure({ device, format: 'rgba8unorm', alphaMode: 'premultiplied', usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC });
+
+    // one full-screen triangle; the picture is made in the fragment shader: rings and a turning bar
+    const module = device.createShaderModule({ code: `
+      struct U { size: vec2f, t: f32, pad: f32 }
+      @group(0) @binding(0) var<uniform> u: U;
+      @vertex fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f {
+        let p = vec2f(f32((i << 1u) & 2u), f32(i & 2u));
+        return vec4f(p * 2.0 - 1.0, 0.0, 1.0);
+      }
+      @fragment fn fs(@builtin(position) pos: vec4f) -> @location(0) vec4f {
+        let p = (pos.xy - 0.5 * u.size) / u.size.y;
+        let d = length(p);
+        let rings = 0.5 + 0.5 * cos(40.0 * d - 6.2831853 * u.t);
+        var c = mix(vec3f(0.05, 0.08, 0.14), vec3f(1.0, 0.54, 0.36), rings * smoothstep(0.75, 0.1, d));
+        let a = 6.2831853 * u.t / 4.0;
+        let q = vec2f(p.x * cos(a) + p.y * sin(a), -p.x * sin(a) + p.y * cos(a));
+        let bar = (1.0 - smoothstep(0.0, 1.5 / u.size.y, abs(q.y) - 0.012)) * step(0.0, q.x) * step(q.x, 0.42);
+        c = mix(c, vec3f(0.37, 0.69, 1.0), bar);
+        // alpha falls off towards the corners; the colour is premultiplied by it
+        let alpha = smoothstep(0.95, 0.55, d);
+        return vec4f(c * alpha, alpha);
+      }` });
+    const pipeline = device.createRenderPipeline({ layout: 'auto', vertex: { module, entryPoint: 'vs' }, fragment: { module, entryPoint: 'fs', targets: [{ format: 'rgba8unorm' }] } });
+    const ubo = device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    const bind = device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: ubo } }] });
+
+    // The seek hook: draws the picture for time t into the canvas's current texture, synchronously.
+    window.__seek = (t) => {
+      device.queue.writeBuffer(ubo, 0, new Float32Array([canvas.width, canvas.height, t, 0]));
+      const enc = device.createCommandEncoder();
+      const pass = enc.beginRenderPass({ colorAttachments: [{ view: context.getCurrentTexture().createView(), loadOp: 'clear', storeOp: 'store', clearValue: [0, 0, 0, 0] }] });
+      pass.setPipeline(pipeline); pass.setBindGroup(0, bind); pass.draw(3); pass.end();
+      device.queue.submit([enc.finish()]);
+    };
+    window.__seek(0);
+    window.__ready = true;
+  })();
+</script>
+</body>
+</html>

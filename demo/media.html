@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>html_gpu_render media test page</title>
+<!--
+  The harder cases for HTML-in-Canvas: a WebGL canvas, a 2D canvas, <img> (SVG and PNG), a <video>, and the CSS
+  effects that need what is behind an element (backdrop-filter, mix-blend-mode). Everything is made in the page:
+  nothing is fetched. window.__seek(t) sets every moving part to time t and resolves when the video shows it.
+  window.__ready becomes true when the pictures and the video are loaded (use: --ready "window.__ready").
+  ?skip=<names> hides cells by name: gl, c2d, svgimg, pngimg, vid, frost, blend, shadow.
+-->
+<style>
+  html, body { margin: 0; width: 100%; height: 100%; background: transparent; overflow: hidden; }
+  body { font: 500 14px/1.2 'Segoe UI', system-ui, sans-serif; color: #e9e8e4; }
+  .cell { position: absolute; width: 300px; height: 200px; border: 1px solid rgba(255, 255, 255, 0.35); border-radius: 10px; overflow: hidden; }
+  .cell > .tag { position: absolute; left: 8px; top: 6px; z-index: 2; text-shadow: 0 1px 3px #000; }
+  .cell > canvas, .cell > img, .cell > video { position: absolute; left: 0; top: 0; width: 300px; height: 200px; }
+  .stripes { position: absolute; inset: 0; background: repeating-linear-gradient(45deg, #ff8a5c 0 14px, #5fb0ff 14px 28px); }
+  .frost { position: absolute; left: 60px; top: 50px; width: 180px; height: 100px; border-radius: 12px; backdrop-filter: blur(8px); background: rgba(255, 255, 255, 0.15); }
+  .blend { position: absolute; left: 90px; top: 40px; width: 120px; height: 120px; border-radius: 50%; background: #37d67a; mix-blend-mode: difference; }
+  .shadowed { position: absolute; left: 70px; top: 60px; width: 160px; height: 80px; background: #ffd24a; border-radius: 40px; filter: drop-shadow(0 10px 12px rgba(0, 0, 0, 0.7)); }
+</style>
+</head>
+<body>
+  <div class="cell" data-part="gl" style="left:40px;top:40px"><span class="tag">WebGL canvas</span><canvas id="gl" width="600" height="400"></canvas></div>
+  <div class="cell" data-part="c2d" style="left:360px;top:40px"><span class="tag">2D canvas</span><canvas id="c2d" width="600" height="400"></canvas></div>
+  <div class="cell" data-part="svgimg" style="left:680px;top:40px"><span class="tag">img, SVG data URL</span><img id="svgimg" alt=""></div>
+  <div class="cell" data-part="pngimg" style="left:1000px;top:40px"><span class="tag">img, PNG blob</span><img id="pngimg" alt=""></div>
+  <div class="cell" data-part="vid" style="left:40px;top:280px"><span class="tag">video (WebM made in the page)</span><video id="vid" muted playsinline preload="auto"></video></div>
+  <div class="cell" data-part="frost" style="left:360px;top:280px"><span class="tag">backdrop-filter: blur</span><div class="stripes"></div><div class="frost"></div></div>
+  <div class="cell" data-part="blend" style="left:680px;top:280px"><span class="tag">mix-blend-mode: difference</span><div class="stripes"></div><div class="blend"></div></div>
+  <div class="cell" data-part="shadow" style="left:1000px;top:280px"><span class="tag">filter: drop-shadow</span><div class="shadowed" id="pill"></div></div>
+
+<script>
+  // ?skip=vid,c2d removes those cells (data-part names), to find out which kind of content a capture cannot take
+  for (const part of (new URLSearchParams(location.search).get('skip') || '').split(',').filter(Boolean)) {
+    const cell = document.querySelector(`[data-part="${part}"]`);
+    if (cell) cell.style.display = 'none';
+  }
+
+  // ── WebGL: one triangle, turned by t ──
+  const glc = document.getElementById('gl');
+  const gl = glc.getContext('webgl', { alpha: true, premultipliedAlpha: true, antialias: true });
+  let drawGl = () => {};
+  if (gl) {
+    const sh = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); return s; };
+    const prog = gl.createProgram();
+    gl.attachShader(prog, sh(gl.VERTEX_SHADER, 'attribute vec2 p; attribute vec3 c; uniform float a; varying vec3 v; void main(){ float s = sin(a), k = cos(a); gl_Position = vec4(p.x * k - p.y * s, (p.x * s + p.y * k) * 1.5, 0.0, 1.0); v = c; }'));
+    gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, 'precision mediump float; varying vec3 v; void main(){ gl_FragColor = vec4(v * 0.8, 0.8); }'));
+    gl.linkProgram(prog); gl.useProgram(prog);
+    const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0, 0.6, 1, 0.2, 0.2, -0.55, -0.4, 0.2, 1, 0.3, 0.55, -0.4, 0.2, 0.4, 1]), gl.STATIC_DRAW);
+    const p = gl.getAttribLocation(prog, 'p'), c = gl.getAttribLocation(prog, 'c');
+    gl.enableVertexAttribArray(p); gl.vertexAttribPointer(p, 2, gl.FLOAT, false, 20, 0);
+    gl.enableVertexAttribArray(c); gl.vertexAttribPointer(c, 3, gl.FLOAT, false, 20, 8);
+    const ua = gl.getUniformLocation(prog, 'a');
+    drawGl = (t) => { gl.viewport(0, 0, 600, 400); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); gl.uniform1f(ua, t * 1.5); gl.drawArrays(gl.TRIANGLES, 0, 3); };
+  }
+
+  // ── 2D canvas: a sweeping arc and the time as text ──
+  const g2 = document.getElementById('c2d').getContext('2d');
+  const draw2d = (t) => {
+    g2.clearRect(0, 0, 600, 400);
+    g2.lineWidth = 18; g2.strokeStyle = 'rgba(255, 210, 74, 0.85)';
+    g2.beginPath(); g2.arc(300, 210, 120, -Math.PI / 2, -Math.PI / 2 + (t % 2) * Math.PI); g2.stroke();
+    g2.fillStyle = '#fff'; g2.font = '500 44px Consolas, monospace'; g2.textAlign = 'center'; g2.fillText(t.toFixed(3), 300, 226);
+  };
+
+  // ── pictures: an SVG as a data URL, a PNG made on a canvas ──
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="300" height="200"><defs><linearGradient id="g" x1="0" x2="1"><stop offset="0" stop-color="#5fb0ff"/><stop offset="1" stop-color="#ff5c8a" stop-opacity="0.2"/></linearGradient></defs><rect width="300" height="200" fill="url(#g)"/><circle cx="150" cy="110" r="60" fill="none" stroke="#fff" stroke-width="6"/></svg>';
+  const svgimg = document.getElementById('svgimg');
+  const pngimg = document.getElementById('pngimg');
+  const loadImg = (img, src) => new Promise((res) => { img.onload = res; img.onerror = res; img.src = src; });
+  const pngCanvas = document.createElement('canvas'); pngCanvas.width = 300; pngCanvas.height = 200;
+  const pg = pngCanvas.getContext('2d');
+  for (let y = 0; y < 200; y += 20) for (let x = 0; x < 300; x += 20) { pg.fillStyle = `hsla(${(x + y) % 360}, 80%, 60%, ${0.3 + 0.7 * (x / 300)})`; pg.fillRect(x, y, 18, 18); }
+
+  // ── video: one second of a moving bar, recorded in the page, then only ever seeked ──
+  const vid = document.getElementById('vid');
+  const makeVideo = () => new Promise((res) => {
+    try {
+      const vc = document.createElement('canvas'); vc.width = 300; vc.height = 200;
+      const vg = vc.getContext('2d');
+      const stream = vc.captureStream(30);
+      const rec = new MediaRecorder(stream, { mimeType: 'video/webm' });
+      const parts = [];
+      rec.ondataavailable = (e) => { if (e.data && e.data.size) parts.push(e.data); };
+      rec.onstop = () => {
+        vid.src = URL.createObjectURL(new Blob(parts, { type: 'video/webm' }));
+        vid.onloadeddata = () => res(true);
+        vid.onerror = () => res(false);
+      };
+      rec.start();
+      const began = performance.now();
+      const tick = () => {
+        const u = Math.min(1, (performance.now() - began) / 1000);
+        vg.fillStyle = '#123'; vg.fillRect(0, 0, 300, 200);
+        vg.fillStyle = '#37d67a'; vg.fillRect(u * 260, 60, 40, 80);
+        if (u < 1) setTimeout(tick, 33); else rec.stop();
+      };
+      tick();
+      setTimeout(() => res(false), 8000);
+    } catch (e) { res(false); }
+  });
+
+  const pill = document.getElementById('pill');
+  let videoOk = false;
+
+  // The seek hook. The video is the only part that answers late, so the hook returns a promise for it.
+  window.__seek = (t) => {
+    drawGl(t);
+    draw2d(t);
+    pill.style.transform = `translateX(${(40 * Math.sin(t * 3)).toFixed(2)}px)`;
+    if (!videoOk || !Number.isFinite(vid.duration)) return undefined;
+    return new Promise((res) => {
+      const target = Math.min(Math.max(0, vid.duration - 0.05), (t % 1) * vid.duration);
+      if (Math.abs(vid.currentTime - target) < 1e-4) return res();
+      const timer = setTimeout(res, 2000);
+      vid.addEventListener('seeked', () => { clearTimeout(timer); res(); }, { once: true });
+      vid.currentTime = target;
+    });
+  };
+
+  window.__ready = false;
+  window.__videoOk = null;
+  (async () => {
+    await loadImg(svgimg, 'data:image/svg+xml;utf8,' + encodeURIComponent(svg));
+    await loadImg(pngimg, await new Promise((r) => pngCanvas.toBlob((b) => r(URL.createObjectURL(b)), 'image/png')));
+    videoOk = await makeVideo();
+    window.__videoOk = videoOk;
+    await window.__seek(0);
+    window.__ready = true;
+  })();
+</script>
+</body>
+</html>

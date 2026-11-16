@@ -1,0 +1,38 @@
+# html_gpu_render
+
+> Render an HTML page or a canvas animation frame by frame to raw, PNG or EXR frames for video, without
+> screenshots: Chromium HTML-in-Canvas (whole page) or a GPU copy of a canvas, WebGPU readback, hidden Electron
+> window. Optional motion blur from sub-frames summed on the GPU, optional HDR / float output. No dependencies.
+
+Use it instead of a Puppeteer / Playwright screenshot loop when the screenshot is the bottleneck: measured 6.5 ms
+against 61 ms per 3440 x 1440 frame. Experimental: it depends on a Chromium API that is still changing.
+
+## Docs
+
+- [README.md](README.md): everything. Sections: Quick start, Which mode (element / canvas / screenshot, canvas
+  roads), The page contract (`window.__seek(t)`), CLI, API, Output (formats, alpha), Motion blur by sub-frames,
+  HDR and float output (sources, colour, ffmpeg HEVC PQ recipe), How it works, Versions and the API rename
+  (Chromium 150 vs 157), Measured numbers, Fidelity against a screenshot, Known limits, Failure messages, Tools
+  and tests.
+- [AGENTS.md](AGENTS.md): the same essentials in one page: how to run, the page contract, which mode, formats,
+  traps, source layout.
+
+## Entry points
+
+- [bin/html-gpu-render.mjs](bin/html-gpu-render.mjs): the command line (`--help` lists every option).
+- [src/index.mjs](src/index.mjs): `render(options)` and `DEFAULTS`.
+- [src/driver.cjs](src/driver.cjs): the frame loop; its header comment describes the roads, the ring, the
+  sub-frame sum and the float pass.
+
+## Examples
+
+- [demo/page.html](demo/page.html): an HTML / SVG page with a seek hook (element mode).
+- [demo/motion.html](demo/motion.html): fast motion, for `--subframes`.
+- [demo/canvas.html](demo/canvas.html), [demo/canvas_webgpu.html](demo/canvas_webgpu.html): canvas mode.
+- [demo/hdr_webgpu.html](demo/hdr_webgpu.html), [demo/hdr_webgl.html](demo/hdr_webgl.html): float sources.
+
+## Checks
+
+- [test/run.mjs](test/run.mjs): `npm test`, the invariants claimed in the README.
+- [tools/probe.mjs](tools/probe.mjs): what a given Electron or browser binary exposes.
+- [tools/compare.mjs](tools/compare.mjs): pixel differences between two renders.

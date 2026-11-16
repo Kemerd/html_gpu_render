@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>html_gpu_render demo page</title>
+<!--
+  A generic test page: text in several faces and sizes, an SVG with stroked paths, semi-transparent boxes, a
+  gradient and a blurred shadow. It has no clock of its own: window.__seek(t) defines the picture at t seconds.
+  The page background is transparent on purpose, so the alpha of the result can be checked.
+-->
+<style>
+  html, body { margin: 0; width: 100%; height: 100%; background: transparent; overflow: hidden; }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; color: #e9e8e4; -webkit-font-smoothing: antialiased; }
+  .abs { position: absolute; }
+  h1 { margin: 0; font-weight: 600; font-size: 58px; letter-spacing: -0.02em; white-space: nowrap; }
+  .eyebrow { font: 500 15px/1 Consolas, monospace; letter-spacing: 0.1em; text-transform: uppercase; color: #a9abb0; }
+  .serif { font: 400 30px/1.25 Georgia, serif; color: #cfd0d4; }
+  .small { font: 400 13px/1.4 'Segoe UI', sans-serif; color: #9a9ca2; }
+  .node { border: 1.5px solid #5fb0ff; border-radius: 14px; background: rgba(95, 176, 255, 0.12); padding: 16px 20px; width: 250px; }
+  .node b { display: block; font-size: 24px; font-weight: 600; }
+  .node span { font: 500 14px/1.4 Consolas, monospace; color: #a9abb0; }
+  .glass { background: rgba(255, 255, 255, 0.08); border-radius: 22px; box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55); }
+  .grad { background: linear-gradient(90deg, rgba(255, 120, 60, 0) 0%, rgba(255, 120, 60, 0.9) 50%, rgba(120, 90, 255, 0) 100%); border-radius: 8px; }
+  .half { opacity: 0.5; background: #37d67a; border-radius: 50%; }
+  #dot { width: 18px; height: 18px; border-radius: 50%; background: #ffd24a; box-shadow: 0 0 22px rgba(255, 210, 74, 0.8); will-change: transform; }
+  svg { position: absolute; left: 0; top: 0; }
+</style>
+</head>
+<body>
+  <div class="abs eyebrow" style="left:120px;top:84px">frame by frame &middot; no screenshot</div>
+  <h1 class="abs" style="left:118px;top:110px">Drawn as HTML, read as pixels</h1>
+  <div class="abs serif" style="left:120px;top:196px;width:760px">Text, vector strokes and translucent boxes, laid out by the browser and read back from the GPU as raw pixels.</div>
+  <div class="abs small" style="left:120px;top:300px;width:520px">Small type shows the antialiasing best: the quick brown fox jumps over the lazy dog, 0123456789, (a+b) = c; fi fl ffi.</div>
+
+  <div class="abs glass" style="left:980px;top:70px;width:660px;height:270px"></div>
+  <div class="abs node" style="left:1020px;top:110px"><b>Simulation</b><span>step 1 ms</span></div>
+  <div class="abs node" style="left:1320px;top:190px;border-color:#ff8a5c;background:rgba(255,138,92,0.14)"><b>Renderer</b><span>frame 16.7 ms</span></div>
+  <div class="abs grad" style="left:120px;top:392px;width:1480px;height:10px"></div>
+  <div class="abs half" style="left:820px;top:440px;width:150px;height:150px"></div>
+  <div class="abs half" style="left:900px;top:480px;width:150px;height:150px;background:#ff5c8a"></div>
+
+  <svg width="1720" height="720" viewBox="0 0 1720 720" fill="none">
+    <path d="M120 600 C 400 420, 620 700, 900 560 S 1400 420, 1600 600" stroke="#5fb0ff" stroke-width="2.5"/>
+    <path id="trace" d="M120 640 C 400 460, 620 740, 900 600 S 1400 460, 1600 640" stroke="#ff8a5c" stroke-width="1.5" stroke-dasharray="6 8" stroke-opacity="0.8"/>
+    <circle cx="1450" cy="520" r="46" stroke="#e9e8e4" stroke-width="1" stroke-opacity="0.6"/>
+    <line x1="1404" y1="520" x2="1496" y2="520" stroke="#e9e8e4" stroke-width="0.75" stroke-opacity="0.6"/>
+    <text id="clock" x="1450" y="600" text-anchor="middle" font-family="Consolas" font-size="18" font-weight="500" fill="#c9cbd0">t = 0.000 s</text>
+  </svg>
+  <div id="dot" class="abs" style="left:0;top:0"></div>
+
+<script>
+  // The seek hook: everything that moves is a pure function of t (seconds), so any frame can be asked for alone.
+  const dot = document.getElementById('dot');
+  const clock = document.getElementById('clock');
+  const trace = document.getElementById('trace');
+  window.__seek = (t) => {
+    const u = (t / 4) % 1;                                   // one lap every 4 s
+    const x = 120 + 1480 * u;
+    const y = 600 - 60 * Math.sin(u * Math.PI * 2);
+    dot.style.transform = `translate(${(x - 9).toFixed(3)}px, ${(y - 9).toFixed(3)}px)`;
+    clock.textContent = `t = ${t.toFixed(3)} s`;
+    trace.setAttribute('stroke-dashoffset', (-t * 40).toFixed(2));
+  };
+  window.__seek(0);
+</script>
+</body>
+</html>

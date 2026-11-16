@@ -1,0 +1,5 @@
+# rendered frames, test and bench output
+out/
+# exploration scripts that are not part of the tool
+scratch/
+node_modules/

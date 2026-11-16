@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>html_gpu_render HDR demo (WebGPU float canvas)</title>
+<!--
+  Known values above 1.0, to check the float formats:  --mode canvas --format raw32f | raw16f | exr | png16
+  The canvas is a WebGPU canvas configured rgba16float with toneMapping { mode: 'extended' }.
+  Five vertical bands hold  v = 0.5, 1, 2, 4, 8  times white:
+      upper half   (v, v, v, 1)
+      lower half   (v, v / 2, v / 4, 1)
+  A thin bar moves across the middle with time (value 16), so that sub-frames have something to blur.
+  window.__seek(t) draws time t; window.__ready is true once the device is there (use: --ready "window.__ready").
+-->
+<style>
+  html, body { margin: 0; width: 100%; height: 100%; background: transparent; overflow: hidden; }
+  canvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; display: block; }
+</style>
+</head>
+<body>
+<canvas id="stage"></canvas>
+<script>
+  window.__ready = false;
+  window.__seek = () => {};
+  (async () => {
+    const canvas = document.getElementById('stage');
+    canvas.width = Math.round(innerWidth * devicePixelRatio);
+    canvas.height = Math.round(innerHeight * devicePixelRatio);
+    const adapter = await navigator.gpu.requestAdapter();
+    const device = await adapter.requestDevice();
+    const context = canvas.getContext('webgpu');
+    // a float canvas: values are not limited to 0..1
+    context.configure({ device, format: 'rgba16float', alphaMode: 'premultiplied', toneMapping: { mode: 'extended' } });
+
+    const module = device.createShaderModule({ code: `
+      struct U { size: vec2f, t: f32, pad: f32 }
+      @group(0) @binding(0) var<uniform> u: U;
+      @vertex fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f {
+        let p = vec2f(f32((i << 1u) & 2u), f32(i & 2u));
+        return vec4f(p * 2.0 - 1.0, 0.0, 1.0);
+      }
+      @fragment fn fs(@builtin(position) pos: vec4f) -> @location(0) vec4f {
+        // the band: 0.5, 1, 2, 4, 8
+        let k = min(4.0, floor(pos.x * 5.0 / u.size.x));
+        let v = 0.5 * pow(2.0, k);
+        var c = vec3f(v, v, v);
+        if (pos.y >= 0.5 * u.size.y) { c = vec3f(v, v * 0.5, v * 0.25); }
+        // the moving bar: 1 % of the width, one crossing per second, value 16
+        let x = fract(u.t) * u.size.x;
+        if (abs(pos.y - 0.5 * u.size.y) < 0.02 * u.size.y && pos.x >= x && pos.x < x + 0.01 * u.size.x && u.t >= 0.0) { c = vec3f(16.0); }
+        return vec4f(c, 1.0);
+      }` });
+    const pipeline = device.createRenderPipeline({ layout: 'auto', vertex: { module, entryPoint: 'vs' }, fragment: { module, entryPoint: 'fs', targets: [{ format: 'rgba16float' }] } });
+    const ubo = device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    const bind = device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: ubo } }] });
+
+    // The seek hook: draws the picture for time t, synchronously. ?bar=0 leaves the moving bar out.
+    const bar = new URLSearchParams(location.search).get('bar') !== '0';
+    window.__seek = (t) => {
+      device.queue.writeBuffer(ubo, 0, new Float32Array([canvas.width, canvas.height, bar ? t : -1, 0]));
+      const enc = device.createCommandEncoder();
+      const pass = enc.beginRenderPass({ colorAttachments: [{ view: context.getCurrentTexture().createView(), loadOp: 'clear', storeOp: 'store', clearValue: [0, 0, 0, 0] }] });
+      pass.setPipeline(pipeline); pass.setBindGroup(0, bind); pass.draw(3); pass.end();
+      device.queue.submit([enc.finish()]);
+    };
+    window.__seek(0);
+    window.__ready = true;
+  })();
+</script>
+</body>
+</html>

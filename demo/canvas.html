@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>html_gpu_render canvas demo</title>
+<!--
+  A page whose whole picture is one WebGL canvas, the case for  --mode canvas.  The drawing buffer is the viewport
+  times devicePixelRatio and is NOT preserved (preserveDrawingBuffer is left false, as three.js and most engines
+  do), so a capture must take the picture in the same task that drew it. window.__seek(t) draws time t.
+-->
+<style>
+  html, body { margin: 0; width: 100%; height: 100%; background: transparent; overflow: hidden; }
+  canvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; display: block; }
+</style>
+</head>
+<body>
+<canvas id="stage"></canvas>
+<script>
+  const canvas = document.getElementById('stage');
+  // the drawing buffer in device pixels
+  canvas.width = Math.round(innerWidth * devicePixelRatio);
+  canvas.height = Math.round(innerHeight * devicePixelRatio);
+  const gl = canvas.getContext('webgl2', { alpha: true, premultipliedAlpha: true, antialias: true });
+
+  // one full-screen triangle; the picture is made in the fragment shader: rings, a turning bar, a soft disc
+  const compile = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; };
+  const program = gl.createProgram();
+  gl.attachShader(program, compile(gl.VERTEX_SHADER, `#version 300 es
+    void main() { vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2)); gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0); }`));
+  gl.attachShader(program, compile(gl.FRAGMENT_SHADER, `#version 300 es
+    precision highp float;
+    uniform vec2 size; uniform float t;
+    out vec4 colour;
+    void main() {
+      vec2 p = (gl_FragCoord.xy - 0.5 * size) / size.y;
+      float d = length(p);
+      // rings that move outwards with time
+      float rings = 0.5 + 0.5 * cos(40.0 * d - 6.2831853 * t);
+      vec3 c = mix(vec3(0.05, 0.08, 0.14), vec3(0.37, 0.69, 1.0), rings * smoothstep(0.75, 0.1, d));
+      // a bar that turns once every four seconds, antialiased over one pixel
+      float a = 6.2831853 * t / 4.0;
+      vec2 q = vec2(p.x * cos(a) + p.y * sin(a), -p.x * sin(a) + p.y * cos(a));
+      float bar = (1.0 - smoothstep(0.0, 1.5 / size.y, abs(q.y) - 0.012)) * step(0.0, q.x) * step(q.x, 0.42);
+      c = mix(c, vec3(1.0, 0.54, 0.36), bar);
+      // alpha falls off towards the corners, so the frames have real transparency
+      float alpha = smoothstep(0.95, 0.55, d);
+      colour = vec4(c * alpha, alpha);
+    }`));
+  gl.linkProgram(program);
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program));
+  gl.useProgram(program);
+  const uSize = gl.getUniformLocation(program, 'size'), uT = gl.getUniformLocation(program, 't');
+
+  // The seek hook: draws the picture for time t, synchronously.
+  window.__seek = (t) => {
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.uniform2f(uSize, canvas.width, canvas.height);
+    gl.uniform1f(uT, t);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  };
+  window.__seek(0);
+</script>
+</body>
+</html>

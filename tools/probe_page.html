@@ -1,0 +1,37 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>probe</title>
+<canvas id="c" layoutsubtree width="64" height="64"><div id="d">hi</div></canvas>
+<script>
+// Collects which HTML-in-Canvas entry points this runtime exposes; read by the probe scripts.
+window.__probe = async () => {
+  const out = { ua: navigator.userAgent, secure: isSecureContext, href: location.protocol };
+  out.draw2d = 'drawElementImage' in CanvasRenderingContext2D.prototype;
+  out.draw2dOld = 'drawElement' in CanvasRenderingContext2D.prototype;
+  out.offscreen2d = typeof OffscreenCanvasRenderingContext2D !== 'undefined' && 'drawElementImage' in OffscreenCanvasRenderingContext2D.prototype;
+  out.gl2 = typeof WebGL2RenderingContext !== 'undefined' && 'texElementImage2D' in WebGL2RenderingContext.prototype;
+  out.gl1 = typeof WebGLRenderingContext !== 'undefined' && 'texElementImage2D' in WebGLRenderingContext.prototype;
+  out.hasGPU = !!navigator.gpu;
+  out.gpuQueue = typeof GPUQueue !== 'undefined' && 'copyElementImageToTexture' in GPUQueue.prototype;
+  // the same call under its newer name (Chromium 157), and the newer canvas attribute content="drawable"
+  out.gpuQueueDraw = typeof GPUQueue !== 'undefined' && 'drawElementImageToTexture' in GPUQueue.prototype;
+  out.canvasContent = 'content' in HTMLCanvasElement.prototype;
+  out.glSub = typeof WebGL2RenderingContext !== 'undefined' && 'texElementSubImage2D' in WebGL2RenderingContext.prototype;
+  out.layoutSubtreeProp = 'layoutSubtree' in HTMLCanvasElement.prototype;
+  out.onpaint = 'onpaint' in HTMLCanvasElement.prototype;
+  out.requestPaint = 'requestPaint' in HTMLCanvasElement.prototype;
+  out.captureElementImage = 'captureElementImage' in HTMLCanvasElement.prototype;
+  out.ElementImage = typeof ElementImage !== 'undefined';
+  // every member whose name mentions Element on the three surfaces, so a renamed method is not missed
+  const names = (p) => p ? Object.getOwnPropertyNames(p).filter((n) => /element|paint|subtree/i.test(n)) : [];
+  out.names2d = names(CanvasRenderingContext2D.prototype);
+  out.namesGL2 = names(typeof WebGL2RenderingContext !== 'undefined' && WebGL2RenderingContext.prototype);
+  out.namesQueue = names(typeof GPUQueue !== 'undefined' && GPUQueue.prototype);
+  out.namesCanvas = names(HTMLCanvasElement.prototype);
+  if (navigator.gpu) {
+    try { const a = await navigator.gpu.requestAdapter(); out.adapter = a ? (a.info ? `${a.info.vendor} ${a.info.architecture} ${a.info.device} ${a.info.description}` : 'adapter') : null; }
+    catch (e) { out.adapterErr = String(e); }
+  }
+  return out;
+};
+</script>
